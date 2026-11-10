@@ -10,6 +10,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.media.AudioManager;
 import android.media.audiofx.Equalizer;
 import android.media.audiofx.BassBoost;
+import android.media.audiofx.LoudnessEnhancer;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.*;
@@ -21,17 +22,18 @@ public class MainActivity extends Activity {
  AudioManager audio;
  Equalizer eq;
  BassBoost bassFx;
+ LoudnessEnhancer loudness;
  SeekBar volume, bass, eqSlider;
  TextView volumeValue, status;
  SharedPreferences prefs;
  boolean effects=false;
- int bassValue=25, eqValue=0;
+ int bassValue=25, eqValue=0, gainDb=0;
  String preset="Car AUX";
  @Override public void onCreate(Bundle state) {
   super.onCreate(state);
   audio=(AudioManager)getSystemService(Context.AUDIO_SERVICE);
   prefs=getSharedPreferences("voluamp",MODE_PRIVATE);
-  bassValue=prefs.getInt("bass",25); eqValue=prefs.getInt("eq",0);
+  bassValue=prefs.getInt("bass",25); eqValue=prefs.getInt("eq",0); gainDb=prefs.getInt("gain",0);
   preset=prefs.getString("preset","Car AUX");
   getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
   ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(BG);
@@ -61,6 +63,10 @@ public class MainActivity extends Activity {
   volumeValue.setText(Math.round(current*100f/max)+"%");
   volume=slider(p,max,current,v->{audio.setStreamVolume(AudioManager.STREAM_MUSIC,v,0);volumeValue.setText(Math.round(v*100f/max)+"%");});
   add(p,"Controls Android media volume, not additional hardware amplification.",12,MUTED,false);
+  LinearLayout gainPanel=panel();add(gainPanel,"LOUDNESS BOOST • EXPERIMENTAL",15,TEXT,true);
+  TextView gainText=add(gainPanel,"+"+gainDb+" dB",30,TEXT,true);
+  slider(gainPanel,15,gainDb,v->{gainDb=v;gainText.setText("+"+v+" dB");prefs.edit().putInt("gain",v).apply();if(!effects)toggleEffects();applyEffects();});
+  add(gainPanel,"Actual amplification depends on Android audio routing. Start low to avoid distortion.",12,MUTED,false);
   LinearLayout q=panel();add(q,"CURRENT PRESET",12,MUTED,true);add(q,preset,22,TEXT,true);
   button(q,"Choose a preset",()->show("Presets"));
   LinearLayout fx=panel();add(fx,"AUDIO PROCESSING",15,TEXT,true);
@@ -94,8 +100,8 @@ public class MainActivity extends Activity {
  }
  void settings(){
   LinearLayout p=panel();add(p,"AUDIO COMPATIBILITY",18,TEXT,true);
-  add(p,"Global effects: "+(effects?"Enabled (not guaranteed to affect other apps)":"Disabled"),14,MUTED,false);
-  button(p,"Reset sound settings",()->{bassValue=25;eqValue=0;preset="Car AUX";prefs.edit().clear().apply();applyEffects();show("Settings");});
+  add(p,"Global effects (including loudness): "+(effects?"Enabled (not guaranteed to affect other apps)":"Disabled"),14,MUTED,false);
+  button(p,"Reset sound settings",()->{bassValue=25;eqValue=0;gainDb=0;preset="Car AUX";prefs.edit().clear().apply();applyEffects();show("Settings");});
   LinearLayout q=panel();add(q,"SAFETY & LIMITATIONS",17,TEXT,true);
   add(q,"Start with your car stereo volume low. Reduce settings if you hear distortion.",14,MUTED,false);
   add(q,"Android may prevent VoluAmp from amplifying audio from Amazon Music, Spotify, and other apps. Software cannot increase the phone's physical AUX output power.",13,MUTED,false);
@@ -104,13 +110,15 @@ public class MainActivity extends Activity {
  void toggleEffects(){if(effects){releaseEffects();return;}
   try {eq=new Equalizer(0,0);eq.setEnabled(true);}catch(Exception e){eq=null;}
   try {bassFx=new BassBoost(0,0);bassFx.setEnabled(true);}catch(Exception e){bassFx=null;}
-  effects=eq!=null||bassFx!=null;applyEffects();
+  try {loudness=new LoudnessEnhancer(0);loudness.setEnabled(true);}catch(Exception e){loudness=null;}
+  effects=eq!=null||bassFx!=null||loudness!=null;applyEffects();
   if(!effects)Toast.makeText(this,"System audio effects unavailable on this device",Toast.LENGTH_LONG).show();
  }
  void applyEffects(){
+  try{if(loudness!=null)loudness.setTargetGain(gainDb*100);}catch(Exception ignored){}
   try{if(bassFx!=null)bassFx.setStrength((short)(bassValue*10));}catch(Exception ignored){}
   try{if(eq!=null){short upper=eq.getBandLevelRange()[1];short level=(short)Math.min(upper,eqValue*1000);for(short i=0;i<eq.getNumberOfBands();i++)eq.setBandLevel(i,level);}}catch(Exception ignored){}
  }
- void releaseEffects(){if(eq!=null){eq.release();eq=null;}if(bassFx!=null){bassFx.release();bassFx=null;}effects=false;}
+ void releaseEffects(){if(loudness!=null){loudness.release();loudness=null;}if(eq!=null){eq.release();eq=null;}if(bassFx!=null){bassFx.release();bassFx=null;}effects=false;}
  @Override protected void onDestroy(){releaseEffects();super.onDestroy();}
 }
